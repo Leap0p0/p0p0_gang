@@ -11,8 +11,30 @@ local Keys = {
 }
 
 ESX = nil
+local AddSpawnVehicle = {}
+local garage = {
+   garagespawn = vector3(240.71, -1004.96, -99.0),
+
+ Computer = vector3(234.41, -976.79, -99.0),
+ Exit = vector3(240.71, -1004.96, -99.0),
+
+ AllowedPositions = {
+  {pos = vector3(233.47, -982.57, -99.85), heading = 90.1 },
+  {pos = vector3(233.47, -987.57, -99.85), heading = 90.1 },
+  {pos = vector3(233.47, -992.57, -99.85), heading = 90.1 },
+  {pos = vector3(233.47, -997.57, -99.85), heading = 90.1 },
+  {pos = vector3(233.47, -1002.57, -99.85), heading = 90.1 },
+  {pos = vector3(223.55, -982.57, -99.85), heading = 266.36 },
+  {pos = vector3(223.55, -987.57, -99.85), heading = 266.36 },
+  {pos = vector3(223.55, -992.57, -99.85), heading = 266.36 },
+  {pos = vector3(223.55, -997.57, -99.85), heading = 266.36 },
+  {pos = vector3(223.55, -1002.57, -99.85), heading = 266.36 }
+}
+}
+
 
 local gangpoint = {}
+local vehicle = nil
 local name = nil
 local label = nil
 local name_suppr = nil
@@ -20,6 +42,8 @@ local name_petit = nil
 local name_moyen = nil
 local name_grand = nil
 local name_boss = nil
+local despawn_garage = nil
+local entry_garage =nil
 local first_place = nil
 local second_place = nil
 local GUI               = {}
@@ -32,6 +56,8 @@ local job = nil
 local job_grade = nil
 local stock_pos = nil
 local builder = {
+  entry_garage = nil,
+  despawn_garage = nil,
   first_coord = nil,
   second_coord = nil
 }
@@ -42,6 +68,23 @@ TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
 RMenu.Add("popogang", "categorie", RageUI.CreateMenu("Souhaitez-vous", "~b~ Créer / Supprimer"))
 RMenu:Get("popogang", "categorie").Closed = function()
 end
+
+RMenu.Add("popogang", "getvehicle", RageUI.CreateMenu("Souhaitez-vous", "~b~ Sortir / manager vos véhicules"))
+RMenu:Get("popogang", "getvehicle").Closed = function()
+end
+
+RMenu.Add("popogang", "getvehiclepublic", RageUI.CreateSubMenu(RMenu:Get("popogang", "getvehicle"), "véhicule", nil))
+RMenu:Get("popogang", "getvehiclepublic").Closed = function()
+end
+
+RMenu.Add("popogang", "getvehiclegang", RageUI.CreateSubMenu(RMenu:Get("popogang", "getvehicle"), "véhicule", nil))
+RMenu:Get("popogang", "getvehiclegang").Closed = function()
+end
+
+RMenu.Add("popogang", "getvehicleout", RageUI.CreateSubMenu(RMenu:Get("popogang", "getvehicle"), "véhicule", nil))
+RMenu:Get("popogang", "getvehicleout").Closed = function()
+end
+
 
 RMenu.Add("popogang", "garage", RageUI.CreateMenu("Souhaitez-vous", nil))
 RMenu:Get("popogang", "garage").Closed = function()
@@ -66,6 +109,7 @@ RMenu.Add("popogang", "delete", RageUI.CreateSubMenu(RMenu:Get("popogang", "cate
 RMenu:Get("popogang", "delete").Closed = function()
 end
 
+
 RegisterNetEvent('esx:playerLoaded')
 AddEventHandler('esx:playerLoaded', function(xPlayer)
 ESX.PlayerData = xPlayer
@@ -83,6 +127,121 @@ RegisterNetEvent('esx:setJob2')
 AddEventHandler('esx:setJob2', function(job2)
 ESX.PlayerData.job2 = job2
 end)
+
+function setVehicleProps(vehicle, vehicleProps)
+	ESX.Game.SetVehicleProperties(vehicle, vehicleProps)
+	SetVehicleEngineHealth(vehicle, vehicleProps["engineHealth"] and vehicleProps["engineHealth"] + 0.0 or 1000.0)
+    SetVehicleBodyHealth(vehicle, vehicleProps["bodyHealth"] and vehicleProps["bodyHealth"] + 0.0 or 1000.0)
+    SetVehicleFuelLevel(vehicle, vehicleProps["fuelLevel"] and vehicleProps["fuelLevel"] + 0.0 or 1000.0)
+    if vehicleProps["windows"] then
+        for windowId = 1, 13, 1 do
+            if vehicleProps["windows"][windowId] == false then
+                SmashVehicleWindow(vehicle, windowId)
+            end
+        end
+    end
+    if vehicleProps["tyres"] then
+        for tyreId = 1, 7, 1 do
+            if vehicleProps["tyres"][tyreId] ~= false then
+                SetVehicleTyreBurst(vehicle, tyreId, true, 1000)
+            end
+        end
+    end
+    if vehicleProps["doors"] then
+        for doorId = 0, 5, 1 do
+            if vehicleProps["doors"][doorId] ~= false then
+                SetVehicleDoorBroken(vehicle, doorId - 1, true)
+            end
+        end
+    end
+end
+
+GetVehicleLabel = function(VehicleModel)
+  return GetLabelText(GetDisplayNameFromVehicleModel(VehicleModel))
+end
+
+function SetPlayerIntoBucket(Actions)
+  if Actions == true then 
+      --test
+  else
+      TriggerServerEvent("popogang:setPlayerToNormalBucket")
+  end
+end
+
+
+
+function ExitGarageWithVehicle(CurrentVehicle)
+  for _, vehicle in pairs(AddSpawnVehicle) do
+    if DoesEntityExist(vehicle) then
+        DeleteEntity(vehicle)
+    end
+  end
+    DoScreenFadeOut(500)
+    Wait(600)
+    SetPlayerIntoBucket(false)
+    Wait(600)
+    RequestModel(CurrentVehicle.vehicle.model)
+    while not HasModelLoaded(CurrentVehicle.vehicle.model) do
+        Wait(1)
+    end
+    for i, teleportpoints in pairs(gangpoint) do
+      if ESX.PlayerData.job2.name == teleportpoints.gang_name then
+        ESX.Game.SpawnVehicle(CurrentVehicle.vehicle.model, vector3(teleportpoints.despawn_garage.x, teleportpoints.despawn_garage.y, teleportpoints.despawn_garage.z), 100.0, function(vehicle) 
+            setVehicleProps(vehicle, CurrentVehicle.vehicle)
+            SetPedIntoVehicle(PlayerPedId(), vehicle, -1)
+            SetVehicleEngineOn(vehicle, true, true, false)
+        end)
+      end
+    end
+    TriggerServerEvent("popogang:UpdateStored", CurrentVehicle.plate, GetVehicleLabel(CurrentVehicle.vehicle.model))
+    Wait(1000)
+    DoScreenFadeIn(1000) 
+    
+end
+
+function loadvehicle(nbrvehicle)
+  if AddSpawnVehicle then 
+    for k, v in pairs(AddSpawnVehicle) do
+        if DoesEntityExist(v) then
+            DeleteEntity(v)
+        end
+    end
+  end
+  SetTimeout(500, function()
+    local counter = 0
+    for k,v in pairs(nbrvehicle) do
+      print(v.plate)
+      counter = counter + 1
+      local CurrentVehicles = v.vehicle.model
+      RequestModel(CurrentVehicles)
+      while not HasModelLoaded(CurrentVehicles) do
+        Wait(1)
+      end
+      SpawnVehicle = CreateVehicle(CurrentVehicles, garage.AllowedPositions[counter].pos, garage.AllowedPositions[counter].heading, true, false)
+      setVehicleProps(SpawnVehicle, v.vehicle)
+      SetVehicleUndriveable(SpawnVehicle, true)
+      AddSpawnVehicle[counter] = SpawnVehicle
+    end
+  end)
+
+end
+
+RegisterNetEvent("popogang:reloadVehicles")
+AddEventHandler("popogang:reloadVehicles", function(vehicleData)
+	SetTimeout(120, function()
+    loadvehicle(vehicleData)
+  end)
+end)
+
+function EnterGarage()
+    DoScreenFadeOut(1000)
+    Wait(2000)
+    TriggerServerEvent("popo_gang:setPlayerToBucket", gangpoint.garageID)
+    SetEntityCoords(PlayerPedId(), garage.garagespawn)
+    TriggerServerEvent("popo_gang:requestvehicule")
+end
+
+
 
 local function KeyboardInput(entryTitle, textEntry, inputText, maxLength)
   AddTextEntry(entryTitle, textEntry)
@@ -268,6 +427,9 @@ local function show_marker()
       for i, teleportpoints in pairs(gangpoint) do
           local a = teleportpoints.first_coord
           local b = teleportpoints.second_coord
+          local garages = teleportpoints.entry_garage
+          local despawn = teleportpoints.despawn_garage
+
           
           --POINT COFFRE--
           local dist = #(pos - a)
@@ -280,6 +442,64 @@ local function show_marker()
                       if (IsControlJustPressed(0, 51)) then
                           local society_name = "society_"..teleportpoints.gang_name
                           openStockMenu(society_name)
+                      end
+                  end
+              end
+            --POINT rentrer vehicle--
+          local dist = #(pos - despawn)
+          if (dist <= 100) and job == teleportpoints.gang_name and IsPedSittingInAnyVehicle(PlayerPedId()) then
+              interval = 0
+              DrawMarker(25, despawn.x, despawn.y, (despawn.z - 0.98), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 255, 255, 255, 255, false, true, 2, false, false, false, false)
+              if (dist <= 1) then
+                  AddTextEntry("try", _U('govehiclegragre'))
+                  DisplayHelpTextThisFrame("try", false)
+                  if (IsControlJustPressed(0, 51)) then
+                    local currentvehicle = GetVehiclePedIsIn(PlayerPedId(), false)
+                    TriggerServerEvent("popo_gang:checkvehicle", GetVehicleNumberPlateText(currentvehicle))
+                  end
+              end
+          end
+          --POINT sortie garage--
+          local dist = #(pos - garage.garagespawn)
+              if (dist <= 100) and job == teleportpoints.gang_name then
+                  interval = 0
+                  DrawMarker(25, garage.garagespawn.x, garage.garagespawn.y, (garage.garagespawn.z - 0.98), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 255, 255, 255, 255, false, true, 2, false, false, false, false)
+                  if (dist <= 1) then
+                      AddTextEntry("try", _U('sortir'))
+                      DisplayHelpTextThisFrame("try", false)
+                      if (IsControlJustPressed(0, 51)) then
+                        DoScreenFadeOut(500)
+                        Wait(600)
+                        SetPlayerIntoBucket(false)
+                        SetEntityCoords(GetPlayerPed(-1), garages.x, garages.y, garages.z)
+                        Wait(1000)
+                        DoScreenFadeIn(1000) 
+                      end
+                  end
+              end
+            --POINT computer--
+          local dist = #(pos - garage.Computer)
+          if (dist <= 100) and job == teleportpoints.gang_name then
+              interval = 0
+              DrawMarker(25, 234.41, -976.79, (-99.0 - 0.98), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 255, 255, 255, 255, false, true, 2, false, false, false, false)
+              if (dist <= 1) then
+                  AddTextEntry("try", _U('open_computer'))
+                  DisplayHelpTextThisFrame("try", false)
+                  if (IsControlJustPressed(0, 51)) then
+                      TriggerServerEvent("popo_gang:GetVehiclesGang")
+                  end
+              end
+          end
+          --POINT GARAGE ENTER--
+            local dist = #(pos - garages)
+              if (dist <= 100) and job == teleportpoints.gang_name then
+                  interval = 0
+                  DrawMarker(25, garages.x, garages.y, (garages.z - 0.98), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 255, 255, 255, 255, false, true, 2, false, false, false, false)
+                  if (dist <= 1) then
+                      AddTextEntry("try", _U('open_garage'))
+                      DisplayHelpTextThisFrame("try", false)
+                      if (IsControlJustPressed(0, 51)) then
+                        EnterGarage()
                       end
                   end
               end
@@ -345,6 +565,32 @@ local function openMenu()
                   if (s) then
                   end
               end, RMenu:Get("popogang", "grade"))
+              if builder.despawn_garage == nil then 
+                despawn_garage = "~r~❌"
+              else 
+                despawn_garage = "~b~✅"
+              end 
+                    RageUI.Button(_U('despawn_garage') , _U('despawn_garage'), {RightLabel = despawn_garage}, true,function(h,a,s)
+                        if (s) then
+                            local Ped = PlayerPedId()
+                            local pedCoords = GetEntityCoords(Ped)
+                            builder.despawn_garage = pedCoords
+                            ESX.ShowNotification(_U('despawn'))
+                        end
+                    end)
+              if builder.entry_garage == nil then 
+                entry_garage = "~r~❌"
+              else 
+                entry_garage = "~b~✅"
+              end 
+                    RageUI.Button(_U('entry_garage') , _U('entry_garage'), {RightLabel = entry_garage}, true,function(h,a,s)
+                        if (s) then
+                            local Ped = PlayerPedId()
+                            local pedCoords = GetEntityCoords(Ped)
+                            builder.entry_garage = pedCoords
+                            ESX.ShowNotification(_U('entry'))
+                        end
+                    end)
         if builder.first_coord == nil then 
           first_place = "~r~❌"
         else 
@@ -385,9 +631,13 @@ local function openMenu()
                           builder.gang_name = nil
                           builder.label_name = nil
                           first_place = nil
+                          entry_garage = nil
+                          despawn_garage = nil
                           second_place = nil
                           builder.first_coord = nil
                           builder.second_coord = nil
+                          builder.entry_garage = nil
+                          builder.despawn_garage = nil
                       else
                           ESX.ShowNotification(_U('no'))
                       end
@@ -828,6 +1078,14 @@ local ynew = plyPos.y+2
 SetEntityCoords(GetPlayerPed(-1), xnew, ynew, plyPos.z)
 end)
 
+RegisterNetEvent('popo_gang:checkpositiv')
+AddEventHandler('popo_gang:checkpositiv', function()
+  local pVehicle = GetVehiclePedIsIn(PlayerPedId())
+  local plate = GetVehicleNumberPlateText(pVehicle)
+  DeleteEntity(pVehicle)
+  TriggerServerEvent("popogang:UpdateStoredgo", plate)
+end)
+
 
 -- Handcuff
 Citizen.CreateThread(function()
@@ -865,6 +1123,113 @@ RegisterNetEvent("popo_gang:nbgang", function(point)
   show_marker()
 end)
 
+RegisterNetEvent("popo_gang:loadvehicle")
+AddEventHandler("popo_gang:loadvehicle", function(nbrvehicle)
+  loadvehicle(nbrvehicle)
+  Wait(2000)
+  DoScreenFadeIn(2000) 
+end)
+
 RegisterCommand("popogang", function()
   openMenu()
 end, false)
+
+
+RegisterNetEvent("popo_gang:OpenGestionGarageMenu")
+AddEventHandler("popo_gang:OpenGestionGarageMenu", function(OwnedVehicles, GarageVehicles)
+	myOwnedVehicles = OwnedVehicles
+	myGarageVehicles = GarageVehicles
+
+  RageUI.Visible(RMenu:Get("popogang","getvehicle"), true)
+  Citizen.CreateThread(function()
+    while true do
+        RageUI.IsVisible(RMenu:Get("popogang","getvehicle"),true,true,true,function()
+            RageUI.Button("Gestion véhicule(s) garage public" , "Gestion véhicule(s) garage public", {RightLabel = "~g~>>>"}, true,function(h,a,s)
+                if (s) then
+                end
+            end,RMenu:Get("popogang", "getvehiclepublic"))
+            RageUI.Button("Gestion véhicule(s) de la propriété" , "Gestion véhicule(s) de la propriété", {RightLabel = "~g~>>>"}, true,function(h,a,s)
+                if (s) then
+                end
+            end,RMenu:Get("popogang", "getvehiclegang"))
+            RageUI.Button("Sortir un véhicule" , "Sortir un véhicule", {RightLabel = "~g~>>>"}, true,function(h,a,s)
+              if (s) then
+              end
+          end,RMenu:Get("popogang", "getvehicleout"))
+        end, function()end)
+        RageUI.IsVisible(RMenu:Get("popogang","getvehiclepublic"),true,true,true,function()
+          if #myOwnedVehicles > 0 then 
+          for t,b in pairs (myOwnedVehicles) do 
+            if #myGarageVehicles == garage.AllowedPositions then 
+              RageUI.Button("~s~ - [~o~"..b.plate.."~s~]",nil, {RightLabel = "~b~Attribuer~s~ →"}, true,function(h,a,s)end)
+            else
+              RageUI.Button(GetVehicleLabel(b.vehicle.model).."[~o~"..b.plate.."~s~]" , nil, {RightLabel = "~g~>>>"}, true,function(h,a,s)
+                if (s) then
+                    RageUI.CloseAll()
+                    TriggerServerEvent("popogang:InteractionsGarage", b.vehicle, 1)
+                end
+              end)
+            end
+          end
+        else
+          RageUI.Separator("~r~Vous n'avez aucun véhicule.")
+          end
+        end, function()end)
+        RageUI.IsVisible(RMenu:Get("popogang","getvehiclegang"),true,true,true,function()
+          if #myGarageVehicles > 0 then 
+            if #myGarageVehicles < #garage.AllowedPositions then 
+              RageUI.Separator("Place(s) disponibles : ~r~"..#myGarageVehicles.."~s~/~r~"..#garage.AllowedPositions)
+            else
+              RageUI.Separator("Place(s) disponibles : ~r~MAX")
+            end
+              for t,b in pairs (myGarageVehicles) do 
+                if b.stored then 
+                  OwnedPrefix = "~g~Rentré~s~"
+                else
+                  OwnedPrefix = "~r~Sortie~s~"
+                end
+                RageUI.Button(GetVehicleLabel(b.vehicle.model).."[~o~"..b.plate.."~s~]" , nil, {RightLabel = "["..OwnedPrefix.."]"}, true,function(h,a,s)
+                  if (s) then
+                    RageUI.CloseAll()
+                    TriggerServerEvent("popogang:InteractionsGarage", b.vehicle, 2)
+                  end
+                end)
+
+              end
+          else
+            RageUI.Separator("~r~Vous n'avez aucun véhicule.")
+          end
+        end, function()end)
+        RageUI.IsVisible(RMenu:Get("popogang","getvehicleout"),true,true,true,function()
+          if #myGarageVehicles > 0 then 
+            if #myGarageVehicles < #garage.AllowedPositions then 
+              RageUI.Separator("Place(s) disponibles : ~r~"..#myGarageVehicles.."~s~/~r~"..#garage.AllowedPositions)
+            else
+              RageUI.Separator("Place(s) disponibles : ~r~MAX")
+            end
+              for t,b in pairs (myGarageVehicles) do 
+                if b.stored then 
+                  OwnedPrefix = "~g~Rentré~s~"
+                else
+                  OwnedPrefix = "~r~Sortie~s~"
+                end
+                RageUI.Button("[~o~"..b.plate.."~s~]" , nil, {RightLabel = "["..OwnedPrefix.."]"}, true,function(h,a,s)
+                  if (s) then
+                    if b.stored then
+                      RageUI.CloseAll()
+                      ExitGarageWithVehicle(b)
+                    else
+                      ESX.ShowNotification("Véhicule déjà sortie")
+                    end
+                  end
+                end)
+
+              end
+          else
+            RageUI.Separator("~r~Vous n'avez aucun véhicule.")
+          end
+        end, function()end)
+        Citizen.Wait(0)
+    end
+  end)
+end)

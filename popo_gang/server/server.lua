@@ -3,6 +3,7 @@ ESX = nil
 TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
 
 local society_name = nil
+local vehicle = nil
 local gangpoint = {}
 local job = nil
 
@@ -17,6 +18,15 @@ end
 
 Citizen.CreateThread(function()
     InitGangs()
+end)
+
+RegisterServerEvent("popo_gang:setPlayerToBucket")
+AddEventHandler("popo_gang:setPlayerToBucket", function(garageID)
+    local _src = source
+	local xPlayer = ESX.GetPlayerFromId(_src)
+	local PlayerBucket = garageID
+	SetPlayerRoutingBucket(_src, PlayerBucket)
+	SetRoutingBucketPopulationEnabled(PlayerBucket, false)
 end)
 
 RegisterNetEvent('popo_gang:register_gang')
@@ -126,13 +136,42 @@ CreateThread(function()
             local data = json.decode(row.coord)
             data.gang_name = row.name
             data.label_name = row.label
+            data.garageID = row.garageID
             data.first_coord = vector3(data.first_coord.x, data.first_coord.y, data.first_coord.z)
             data.second_coord = vector3(data.second_coord.x, data.second_coord.y, data.second_coord.z)
+            data.entry_garage = vector3(data.entry_garage.x, data.entry_garage.y, data.entry_garage.z)
+            data.despawn_garage = vector3(data.despawn_garage.x, data.despawn_garage.y, data.despawn_garage.z)
             table.insert(gangpoint, data)
         end
 
         print(( _U('load').."^3%i^7".._U('load_bis')):format(#result))
     end)
+end)
+
+RegisterServerEvent("popogang:UpdateStored")
+AddEventHandler("popogang:UpdateStored", function (vehiclePlate, vehicleLabel)
+	local _src = source
+    local xPlayer = ESX.GetPlayerFromId(_src)
+  	if vehiclePlate ~= nil then
+		MySQL.Async.execute("UPDATE owned_vehicles SET stored = @stored WHERE plate = @plate", {
+			["@stored"] = 0, 
+			["@plate"] = vehiclePlate
+		})
+		TriggerClientEvent('esx:showNotification', _src, ("Vous avez sortie un/une ~b~%s~s~"):format(vehicleLabel))
+	end
+end)
+
+RegisterServerEvent("popogang:UpdateStoredgo")
+AddEventHandler("popogang:UpdateStoredgo", function (vehiclePlate)
+	local _src = source
+    local xPlayer = ESX.GetPlayerFromId(_src)
+  	if vehiclePlate ~= nil then
+		MySQL.Async.execute("UPDATE owned_vehicles SET stored = @stored WHERE plate = @plate", {
+			["@stored"] = 1, 
+			["@plate"] = vehiclePlate
+		})
+		TriggerClientEvent('esx:showNotification', _src, ("Vous avez rentrée votre véhicule"))
+	end
 end)
 
 RegisterNetEvent("popo_gang:requestgang", function()
@@ -142,6 +181,113 @@ RegisterNetEvent("popo_gang:requestgang", function()
     	job = result[1].job2
     end)
     TriggerClientEvent("popo_gang:nbgang", _src, gangpoint)
+end)
+
+RegisterServerEvent("popo_gang:requestvehicule")
+AddEventHandler("popo_gang:requestvehicule", function()
+  local _src = source
+  local xPlayer = ESX.GetPlayerFromId(_src)
+  MySQL.Async.fetchAll("SELECT * FROM owned_vehicles WHERE owner = @owner AND gangarage = @gangarage",{
+    ['@owner'] = xPlayer.identifier,
+    ['@gangarage'] = 1
+  }, function(result)
+    for i, row in pairs(result) do
+      row.vehicle = json.decode(row.vehicle)
+    end
+    vehicle = result
+    TriggerClientEvent("popo_gang:loadvehicle", _src, vehicle)
+  end)
+end)
+
+RegisterServerEvent("popo_gang:GetVehiclesGang")
+AddEventHandler("popo_gang:GetVehiclesGang", function()
+    local _src = source 
+    local xPlayer = ESX.GetPlayerFromId(_src)
+    MySQL.Async.fetchAll("SELECT * FROM owned_vehicles WHERE owner = @owner AND gangarage = @gangarage",{
+      ['@owner'] = xPlayer.identifier,
+      ['@gangarage'] = 0
+	}, function(ownedResult)
+		for k,v in pairs (ownedResult) do
+      v.stored = v.stored 
+            v.vehicle = json.decode(v.vehicle)
+		end
+		MySQL.Async.fetchAll("SELECT * FROM owned_vehicles WHERE owner = @owner AND gangarage = @gangarage",{
+      ['@owner'] = xPlayer.identifier,
+      ['@gangarage'] = 1
+		}, function(propertiesVehiclesResult)
+			for k,v in pairs (propertiesVehiclesResult) do
+        v.stored = v.stored 
+				v.vehicle = json.decode(v.vehicle)
+			end
+			TriggerClientEvent("popo_gang:OpenGestionGarageMenu", _src, ownedResult, propertiesVehiclesResult)
+		end)
+    end)
+end)
+
+RegisterServerEvent("popo_gang:checkvehicle")
+AddEventHandler("popo_gang:checkvehicle", function(currentvehicle)
+    local _src = source 
+    local xPlayer = ESX.GetPlayerFromId(_src)
+    MySQL.Async.fetchAll("SELECT * FROM owned_vehicles WHERE owner = @owner AND plate = @plate",{
+      ['@owner'] = xPlayer.identifier,
+      ['@plate'] = currentvehicle
+	}, function(ownedResult)
+    if #ownedResult == 1 then
+        TriggerClientEvent("popo_gang:checkpositiv",_src)
+    else
+      TriggerClientEvent('esx:showNotification', _src, "~r~Ce véhicule n'appartient pas au garage ! ")
+    end
+    end)
+end)
+
+RegisterServerEvent("popogang:InteractionsGarage")
+AddEventHandler("popogang:InteractionsGarage", function(vehicleInfos, Actions)
+    local _src = source
+	local xPlayer = ESX.GetPlayerFromId(_src)
+	if Actions == 1 then 
+		MySQL.Async.execute("UPDATE owned_vehicles SET gangarage = @gangarage WHERE plate = @plate", {
+			["@gangarage"] = 1, 
+			["@plate"] = vehicleInfos.plate
+		}, function(result)
+			SetTimeout(120, function()
+					MySQL.Async.fetchAll("SELECT * FROM owned_vehicles WHERE owner = @owner AND gangarage = @gangarage", {
+						["owner"] = xPlayer.getIdentifier(),
+						["gangarage"] = 1
+					}, function(ownedResult)
+						for k,v in pairs(ownedResult) do 
+							v.vehicle = json.decode(v.vehicle)
+						end
+						TriggerClientEvent("popogang:reloadVehicles", _src, ownedResult)
+					end)
+				end)
+				TriggerClientEvent('esx:showNotification', _src, "~b~Propriété~s~\nVéhicule ajouté avec succès.")
+		end)
+	elseif Actions == 2 then 
+		MySQL.Async.execute("UPDATE owned_vehicles SET gangarage = @gangarage WHERE plate = @plate", {
+			["@gangarage"] = 0, 
+			["@plate"] = vehicleInfos.plate
+		}, function(result)
+			SetTimeout(120, function()
+					MySQL.Async.fetchAll("SELECT * FROM owned_vehicles WHERE owner = @owner AND gangarage = @gangarage", {
+						["owner"] = xPlayer.getIdentifier(),
+						["gangarage"] = 1
+					}, function(ownedResult)
+						for k,v in pairs(ownedResult) do
+              v.stored = v.stored
+							v.vehicle = json.decode(v.vehicle)
+						end
+						TriggerClientEvent("popogang:reloadVehicles", _src, ownedResult)
+					end)
+				end)
+				TriggerClientEvent('esx:showNotification', _src, "~b~Propriété~s~\nVéhicule retiré avec succès.")
+			end)
+	end
+end)
+
+RegisterServerEvent("popogang:setPlayerToNormalBucket")
+AddEventHandler("popogang:setPlayerToNormalBucket", function()
+    local _src = source
+    SetPlayerRoutingBucket(_src, 0)
 end)
 
 RegisterServerEvent('popogang:getStockItems')
