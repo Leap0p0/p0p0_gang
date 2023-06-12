@@ -7,6 +7,6 @@ CREATE TABLE `gang` (
 	PRIMARY KEY (`garageID`)
 );
 
-ALTER TABLE `owned_vehicles` (
+ALTER TABLE `owned_vehicles`
 	ADD `gangarage` INT(11) NULL DEFAULT 0
-);
+;
